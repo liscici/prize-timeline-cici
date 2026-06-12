@@ -63,6 +63,7 @@
   .tag { font-size: 11px; padding: 2px 7px; border-radius: 3px; white-space: nowrap; }
   .tag-free-food { background: rgba(230,70,70,0.25); color: #ff8a8a; }
   .tag-free-trial { background: rgba(0,180,180,0.25); color: #5de8e8; }
+  .tag-explore { background: rgba(240,180,60,0.25); color: #f0c040; }
   .tag-price { background: rgba(255,255,255,0.08); color: #aab; }
   .tag-note { background: rgba(255,255,255,0.06); color: #889; }
 
@@ -91,6 +92,7 @@
   .bar:hover { opacity: 0.85; }
   .bar-food { background: linear-gradient(135deg, #e64646, #c03030); }
   .bar-trial { background: linear-gradient(135deg, #00b4b4, #008888); }
+  .bar-explore { background: linear-gradient(135deg, #d4a017, #b8860b); }
 
   /* Today line */
   .today-line {
@@ -148,10 +150,11 @@
 <body>
 <div class="container">
   <h1>中奖体验时间线</h1>
-  <p class="subtitle">免费菜 + 免费试 · 按行政区划分 · 2026年6月</p>
+  <p class="subtitle">免费菜 + 免费试 + 0元探店 · 按行政区划分 · 2026年6月</p>
   <div class="legend">
     <div class="legend-item"><div class="legend-swatch" style="background:#e64646"></div>免费菜</div>
     <div class="legend-item"><div class="legend-swatch" style="background:#00b4b4"></div>免费试</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#d4a017"></div>0元探店</div>
     <div class="legend-item"><div class="legend-diamond"></div>今日 (6/13)</div>
   </div>
 
@@ -161,8 +164,8 @@
 
 <script>
 const TODAY = new Date(2026, 5, 13); // June 13
-const RANGE_START = new Date(2026, 5, 1);
-const RANGE_END = new Date(2026, 6, 16); // July 16
+const RANGE_START = new Date(2026, 4, 15); // May 15
+const RANGE_END = new Date(2026, 6, 20); // July 20
 const TOTAL_DAYS = (RANGE_END - RANGE_START) / 86400000;
 
 function d(s) { const [m,day] = s.split('/').map(Number); return new Date(2026, m-1, day); }
@@ -170,15 +173,19 @@ function pct(date) { return ((date - RANGE_START) / 86400000 / TOTAL_DAYS * 100)
 
 const data = [
   { district: '宝安区', items: [
+    { name: '喜鸽光明乳鸽·粤点海鲜', desc: '双人套餐', type: 'explore', price: '¥194', note: '需提前1天预约', start: '05/18', end: '07/16' },
     { name: '一心缘糖水铺', desc: '炸鱼蛋1份(5个)', type: 'food', price: '¥10', note: '周六不可用', start: '06/10', end: '06/24' },
     { name: '福客麻辣烫(大千里店)', desc: '肥牛麻辣烫1份', type: 'food', price: '¥34.9', note: '周末节假日不可用', start: '06/10', end: '06/24' },
     { name: '蚝蚝先生·广式烧烤', desc: '藤椒鸡肉串4串+山楂饮', type: 'food', price: '¥24', note: '', start: '06/11', end: '06/25' },
+    { name: '酸咕咕·云贵川山野火锅', desc: '云南野菜糍粑（仅限堂食）', type: 'food', price: '¥20', note: '节假日不可用', start: '06/09', end: '06/23' },
+    { name: 'MUJINY木槿钰·创意韩餐', desc: '香茅黄金脆软骨（仅限堂食）', type: 'food', price: '¥36', note: '周六节假日不可用', start: '06/10', end: '06/24' },
     { name: '壹心空间·自习室', desc: '自习室体验', type: 'trial', price: '¥30', note: '提前1天预约', start: '06/03', end: '07/02' },
     { name: '卧岛猫咪洗护(大悦城)', desc: '基础洗护-短毛猫', type: 'trial', price: '¥188', note: '新客专享', start: '06/05', end: '07/04' },
     { name: '华阳高尔夫国际学院', desc: '高尔夫职业教练一对一教学体验课', type: 'trial', price: '¥268', note: '西乡·144人已报名', start: '06/05', end: '07/04' },
   ]},
   { district: '南山区', items: [
     { name: '遇南三·重庆火锅村', desc: '红油牛肉包子1份', type: 'food', price: '¥20', note: '可打包', start: '06/13', end: '06/27' },
+    { name: 'PARTY HOUSE 潮玩电玩城', desc: '100枚游戏币兑换', type: 'trial', price: '¥100', note: '海上世界·330人已报名', start: '06/05', end: '07/04' },
     { name: 'LIVES TENNIS(海上世界)', desc: 'AI网球发球机60min', type: 'trial', price: '¥140', note: '首次体验', start: '06/05', end: '07/19' },
   ]},
 ];
@@ -215,9 +222,10 @@ data.forEach((group, gi) => {
     const left = pct(s);
     const width = pct(e) - left;
     const isFood = item.type === 'food';
-    const barClass = isFood ? 'bar-food' : 'bar-trial';
-    const tagClass = isFood ? 'tag-free-food' : 'tag-free-trial';
-    const tagLabel = isFood ? '免费菜' : '免费试';
+    const isExplore = item.type === 'explore';
+    const barClass = isFood ? 'bar-food' : isExplore ? 'bar-explore' : 'bar-trial';
+    const tagClass = isFood ? 'tag-free-food' : isExplore ? 'tag-explore' : 'tag-free-trial';
+    const tagLabel = isFood ? '免费菜' : isExplore ? '0元探店' : '免费试';
     const todayPct = pct(TODAY);
 
     html += `<div class="row">`;
