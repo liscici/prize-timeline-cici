@@ -208,26 +208,192 @@ const data = [
   ]},
 ];
 
-// === State (localStorage) ===
+// === State (localStorage + GitHub cloud sync) ===
 const STATE_KEY = 'prize_timeline_state';
+const TOKEN_KEY = 'prize_timeline_gh_token';
+const REPO = 'liscici/prize-timeline';
+const STATE_FILE = 'state.json';
+let stateSHA = null;
+
 function getState() {
   try { return JSON.parse(localStorage.getItem(STATE_KEY)) || {}; } catch { return {}; }
 }
 function setState(s) { localStorage.setItem(STATE_KEY, JSON.stringify(s)); }
+function getToken() { return localStorage.getItem(TOKEN_KEY); }
+function setToken(t) { localStorage.setItem(TOKEN_KEY, t); }
+
+// === User actions ===
 function toggleDone(key) {
   const s = getState();
   if (s[key] === 'done') { delete s[key]; } else { s[key] = 'done'; }
   setState(s); render();
+  saveCloudState(s);
 }
 function markReviewed(key) {
   const s = getState();
   s[key] = 'reviewed';
   setState(s);
+  saveCloudState(s);
   // Animate fade out
   const el = document.querySelector(`[data-key="${CSS.escape(key)}"]`);
   if (el) { el.classList.add('row-reviewed'); setTimeout(() => render(), 450); }
   else { render(); }
 }
+
+// Fetch state.json from GitHub (public repo, no auth needed)
+async function loadCloudState() {
+  try {
+    const url = `https://raw.githubusercontent.com/${REPO}/master/${STATE_FILE}?t=${Date.now()}`;
+    const resp = await fetch(url);
+    if (!resp.ok) return null;
+    const text = await resp.text();
+    const parsed = JSON.parse(text);
+    // Get SHA for future updates
+    const metaResp = await fetch(`https://api.github.com/repos/${REPO}/contents/${STATE_FILE}`);
+    if (metaResp.ok) { const meta = await metaResp.json(); stateSHA = meta.sha; }
+    return parsed;
+  } catch { return null; }
+}
+
+// Save state to GitHub via API
+async function saveCloudState(state) {
+  const token = getToken();
+  if (!token) return false;
+  try {
+    // If we don't have SHA yet, fetch it
+    if (!stateSHA) {
+      const metaResp = await fetch(`https://api.github.com/repos/${REPO}/contents/${STATE_FILE}`, {
+        headers: { 'Authorization': `token ${token}` }
+      });
+      if (metaResp.ok) { const meta = await metaResp.json(); stateSHA = meta.sha; }
+    }
+    const body = {
+      message: 'sync: update experience state',
+      content: btoa(unescape(encodeURIComponent(JSON.stringify(state, null, 2)))),
+      sha: stateSHA || undefined
+    };
+    const resp = await fetch(`https://api.github.com/repos/${REPO}/contents/${STATE_FILE}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `token ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    });
+    if (resp.ok) {
+      const result = await resp.json();
+      stateSHA = result.content.sha;
+      showSyncStatus('cloud');
+      return true;
+    }
+    showSyncStatus('error');
+    return false;
+  } catch { showSyncStatus('error'); return false; }
+}
+
+// Sync status indicator
+function showSyncStatus(mode) {
+  let el = document.getElementById('sync-status');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'sync-status';
+    el.style.cssText = 'position:fixed;bottom:16px;right:16px;font-size:11px;padding:4px 10px;border-radius:4px;z-index:100;transition:opacity 0.5s;pointer-events:none;';
+    document.body.appendChild(el);
+  }
+  if (mode === 'cloud') { el.textContent = '☁️ 已同步'; el.style.background = 'rgba(80,200,120,0.8)'; el.style.color = '#fff'; }
+  else if (mode === 'local') { el.textContent = '💾 已保存本地'; el.style.background = 'rgba(255,200,60,0.8)'; el.style.color = '#333'; }
+  else if (mode === 'error') { el.textContent = '⚠️ 同步失败'; el.style.background = 'rgba(255,80,80,0.8)'; el.style.color = '#fff'; }
+  else if (mode === 'loading') { el.textContent = '⏳ 同步中…'; el.style.background = 'rgba(100,150,255,0.8)'; el.style.color = '#fff'; }
+  else if (mode === 'needtoken') { el.textContent = '🔑 请点击齿轮配置同步'; el.style.background = 'rgba(255,200,60,0.9)'; el.style.color = '#333'; }
+  el.style.opacity = '1';
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => { el.style.opacity = '0'; }, mode === 'needtoken' ? 5000 : 2500);
+}
+
+// Prompt for token (once)
+function promptForToken() {
+  const existing = getToken();
+  if (existing) return existing;
+  // Show settings button instead of blocking prompt
+  showSyncStatus('needtoken');
+  return null;
+}
+
+// Settings UI
+function openSettings() {
+  let overlay = document.getElementById('settings-overlay');
+  if (overlay) { overlay.style.display = 'flex'; return; }
+  overlay = document.createElement('div');
+  overlay.id = 'settings-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:200;';
+  overlay.innerHTML = `<div style="background:#2a3550;border-radius:12px;padding:24px;max-width:400px;width:90%;color:#fff;">
+    <h3 style="margin-bottom:12px;font-size:16px;">☁️ 云同步设置</h3>
+    <p style="font-size:12px;color:#8899aa;margin-bottom:12px;">配置 GitHub Token 后，你的「已体验」状态会在所有设备间自动同步。</p>
+    <p style="font-size:12px;color:#8899aa;margin-bottom:16px;">前往 GitHub → Settings → Developer settings → Personal access tokens，创建一个 token（勾选 repo 权限），粘贴到下方：</p>
+    <input id="token-input" type="password" placeholder="ghp_xxxxxxxxxxxx" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid #3a4560;background:#1c2333;color:#fff;font-size:13px;margin-bottom:12px;box-sizing:border-box;" />
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button onclick="document.getElementById('settings-overlay').style.display='none'" style="padding:6px 14px;border-radius:6px;border:1px solid #3a4560;background:transparent;color:#aab;cursor:pointer;font-size:12px;">取消</button>
+      <button id="save-token-btn" style="padding:6px 14px;border-radius:6px;border:none;background:#00b4b4;color:#fff;cursor:pointer;font-size:12px;">保存并同步</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  const input = document.getElementById('token-input');
+  if (getToken()) input.value = getToken();
+  document.getElementById('save-token-btn').onclick = async () => {
+    const token = input.value.trim();
+    if (!token) return;
+    setToken(token);
+    overlay.style.display = 'none';
+    showSyncStatus('loading');
+    await syncFromCloud();
+  };
+}
+
+// Settings gear button
+function addSettingsBtn() {
+  const btn = document.createElement('div');
+  btn.innerHTML = '⚙️';
+  btn.title = '云同步设置';
+  btn.style.cssText = 'position:fixed;bottom:16px;left:16px;font-size:20px;cursor:pointer;opacity:0.5;transition:opacity 0.2s;z-index:100;';
+  btn.onmouseenter = () => btn.style.opacity = '1';
+  btn.onmouseleave = () => btn.style.opacity = '0.5';
+  btn.onclick = openSettings;
+  document.body.appendChild(btn);
+}
+
+// On load: merge cloud state into local
+async function syncFromCloud() {
+  const cloudState = await loadCloudState();
+  if (!cloudState) { showSyncStatus('error'); return; }
+  const local = getState();
+  // Merge: cloud wins for 'reviewed', union for 'done'
+  const merged = { ...cloudState };
+  Object.keys(local).forEach(k => {
+    if (!merged[k]) merged[k] = local[k];
+  });
+  setState(merged);
+  render();
+  showSyncStatus('cloud');
+}
+
+// Init
+addSettingsBtn();
+(async () => {
+  if (getToken()) {
+    showSyncStatus('loading');
+    await syncFromCloud();
+  } else {
+    // Try loading from raw (read-only) even without token
+    const cloudState = await loadCloudState();
+    if (cloudState && Object.keys(cloudState).length > 0) {
+      const local = getState();
+      const merged = { ...cloudState };
+      Object.keys(local).forEach(k => { if (!merged[k]) merged[k] = local[k]; });
+      setState(merged);
+      render();
+    }
+  }
+})();
 
 // === Ticks ===
 const ticks = [];
